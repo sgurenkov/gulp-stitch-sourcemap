@@ -6,12 +6,10 @@ esprima = require('esprima')
 escodegen = require('escodegen')
 
 class Stitch
-  @identifier: 'require'
   fileList: {}
 
   bundle: (fileName, packages) ->
     @definitions = ''
-    @fileName = fileName
     @packages = packages
     @rootPath = process.cwd()
     @lineOffset = @getWrapLineOffset()
@@ -80,72 +78,18 @@ class Stitch
     ", '#{name}': function(exports, require, module) {\n#{source}}"
 
   wrapSources: (sources)->
-    result = """
-          (function(/*! Stitch !*/) {
-            if (!this.#{Stitch.identifier}) {
-              var modules = {}, cache = {}, require = function(name, root) {
-                var path = expand(root, name), module = cache[path], fn;
-                if (module) {
-                  return module.exports;
-                } else if (fn = modules[path] || modules[path = expand(path, './index')]) {
-                  module = {id: path, exports: {}};
-                  try {
-                    cache[path] = module;
-                    fn(module.exports, function(name) {
-                      return require(name, dirname(path));
-                    }, module);
-                    return module.exports;
-                  } catch (err) {
-                    delete cache[path];
-                    throw err;
-                  }
-                } else {
-                  throw 'module \\'' + name + '\\' not found';
-                }
-              }, expand = function(root, name) {
-                var results = [], parts, part;
-                if (/^\\.\\.?(\\/|$)/.test(name)) {
-                  parts = [root, name].join('/').split('/');
-                } else {
-                  parts = name.split('/');
-                }
-                for (var i = 0, length = parts.length; i < length; i++) {
-                  part = parts[i];
-                  if (part == '..') {
-                    results.pop();
-                  } else if (part != '.' && part != '') {
-                    results.push(part);
-                  }
-                }
-                return results.join('/');
-              }, dirname = function(path) {
-                return path.split('/').slice(0, -1).join('/');
-              };
-              this.#{Stitch.identifier} = function(name) {
-                return require(name, '');
-              };
-              this.#{Stitch.identifier}.define = function(bundle) {
-                for (var key in bundle)
-                  modules[key] = bundle[key];
-              };
-            }
-        """
+    result = "(function(/*!Stitch!*/){if (!this.require) { var modules = {}, cache = {}, require = function(name, root) { var path = expand(root, name), module = cache[path], fn; if (module) { return module.exports; } else if (fn = modules[path] || modules[path = expand(path, './index')]) { module = {id: path, exports: {}}; try { cache[path] = module; fn(module.exports, function(name) { return require(name, dirname(path)); }, module); return module.exports; } catch (err) { delete cache[path]; throw err; } } else { throw 'module \\'' + name + '\\' not found'; } }, expand = function(root, name) { var results = [], parts, part; if (/^\\.\\.?(\\/|$)/.test(name)) { parts = [root, name].join('/').split('/'); } else { parts = name.split('/'); } for (var i = 0, length = parts.length; i < length; i++) { part = parts[i]; if (part == '..') { results.pop(); } else if (part != '.' && part != '') { results.push(part); } } return results.join('/'); }, dirname = function(path) { return path.split('/').slice(0, -1).join('/'); }; this.require = function(name) { return require(name, ''); }; this.require.define = function(bundle) { for (var key in bundle) modules[key] = bundle[key];};}"
 
-    result += "\n  var a = {};"
+    result += "var a = {};"
     for filePath,exportedNames of @fileList
       for exportedName in exportedNames
         if exportedName.match /^[a-z]+[a-z0-9]*$/i
-        # @review, can this be less repititive? isn't the assigned value the same for all (this module/file name)?
           result += "a['#{exportedName}']='#{filePath}';"
 
-    result += """
-          \n  this.#{Stitch.identifier}.exportsFileMap=a;
-          return this.#{Stitch.identifier}.define;
-        }).call(this)({\n
-        """
-    result += sources + "});"
+    result += "this.require.exportsFileMap=a;return this.require.define;}).call(this)({\n#{sources}});"
 
   getWrapLineOffset: ->
     @wrapSources('').split('\n').length - 1
+
 module.exports = new Stitch()
 
