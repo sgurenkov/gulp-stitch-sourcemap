@@ -38,5 +38,3 @@ gulp.task('stitch', function() {
     .pipe(gulp.dest('./dist/'));
 });
 ```
-
-### Usage with preprocessors
