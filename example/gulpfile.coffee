@@ -1,7 +1,7 @@
 gulp = require('gulp')
 coffee = require('gulp-coffee')
 sourcemaps = require('gulp-sourcemaps')
-Stitch = require('./../src/stitch')
+stitch = require('./../src')
 gulpAddSrc = require('gulp-add-src');
 
 packages = [
@@ -14,7 +14,7 @@ gulp.task 'default', ->
         .pipe(sourcemaps.init())
         .pipe(coffee({bare: true}))
         .pipe(gulpAddSrc(['common/**/*.js', 'lib/**/*.js']))
-        .pipe(Stitch.bundle('bundle.js', packages))
+        .pipe(stitch('bundle.js', packages))
         .pipe(sourcemaps.write())
         .pipe(gulp.dest('.'))
 
