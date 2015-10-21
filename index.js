@@ -1,4 +1,4 @@
-var PluginError, SourceMapConsumer, SourceMapGenerator, compileSource, definitions, escodegen, esprima, extname, fileList, generateSourceMap, getRelativePath, gutil, join, lineOffset, packages, ref, ref1, resultMap, rootPath, through, wrapSources;
+var G, PluginError, SourceMapConsumer, SourceMapGenerator, compileSource, escodegen, esprima, extname, generateSourceMap, getRelativePath, gutil, init, join, ref, ref1, through, wrapSources;
 
 through = require('through2');
 
@@ -14,17 +14,18 @@ escodegen = require('escodegen');
 
 PluginError = gutil.PluginError;
 
-fileList = {};
+G = {};
 
-definitions = '';
-
-packages = null;
-
-rootPath = process.cwd();
-
-lineOffset = 1;
-
-resultMap = null;
+init = function() {
+  return G = {
+    fileList: {},
+    definitions: '',
+    packages: null,
+    rootPath: process.cwd(),
+    lineOffset: 1,
+    resultMap: null
+  };
+};
 
 generateSourceMap = function(file) {
   var ast, astGen;
@@ -42,10 +43,11 @@ generateSourceMap = function(file) {
 };
 
 getRelativePath = function(path) {
-  var base, i, len, pPath;
-  for (i = 0, len = packages.length; i < len; i++) {
-    pPath = packages[i];
-    base = rootPath + '/' + pPath + '/';
+  var base, i, len, pPath, ref2;
+  ref2 = G.packages;
+  for (i = 0, len = ref2.length; i < len; i++) {
+    pPath = ref2[i];
+    base = G.rootPath + '/' + pPath + '/';
     if (path.indexOf(base) === 0) {
       return path.slice(base.length).slice(0, -extname(path).length);
     }
@@ -55,6 +57,9 @@ getRelativePath = function(path) {
 
 compileSource = function(file) {
   var exportList, i, len, match, matches, name, orig, source;
+  if (file.isStream()) {
+    throw new PluginError('gulp-stitch-sourcemap', '');
+  }
   name = getRelativePath(file.path);
   source = String(file.contents);
   exportList = [];
@@ -65,38 +70,39 @@ compileSource = function(file) {
       exportList.push(match.replace(/exports\./, ''));
     }
   }
-  fileList[name] = exportList;
-  lineOffset++;
+  G.fileList[name] = exportList;
+  G.lineOffset++;
   if (file.sourceMap) {
     orig = new SourceMapConsumer(file.sourceMap);
     orig.eachMapping((function(_this) {
       return function(m) {
-        return resultMap.addMapping({
+        return G.resultMap.addMapping({
           generated: {
-            line: m.generatedLine + lineOffset,
+            line: parseInt(m.generatedLine) + G.lineOffset,
             column: m.generatedColumn
           },
           original: {
-            line: m.originalLine || m.generatedLine,
-            column: m.originalColumn || m.generatedColumn
+            line: m.originalLine,
+            column: m.originalColumn
           },
           source: file.sourceMap.sources[0],
           name: m.name
         });
       };
     })(this));
-    resultMap.setSourceContent(file.sourceMap.sources[0], file.sourceMap.sourcesContent[0]);
+    G.resultMap.setSourceContent(file.sourceMap.sources[0], file.sourceMap.sourcesContent[0]);
   }
-  lineOffset += source.split('\n').length - 1;
-  return ", '" + name + "': function(exports, require, module) {\n" + source + "}";
+  G.lineOffset += source.split('\n').length;
+  return ", '" + name + "': function(exports, require, module) {\n" + source + "\n}";
 };
 
 wrapSources = function(sources) {
-  var exportedName, exportedNames, filePath, i, len, result;
+  var exportedName, exportedNames, filePath, i, len, ref2, result;
   result = "(function(/*!Stitch!*/){if (!this.require) { var modules = {}, cache = {}, require = function(name, root) { var path = expand(root, name), module = cache[path], fn; if (module) { return module.exports; } else if (fn = modules[path] || modules[path = expand(path, './index')]) { module = {id: path, exports: {}}; try { cache[path] = module; fn(module.exports, function(name) { return require(name, dirname(path)); }, module); return module.exports; } catch (err) { delete cache[path]; throw err; } } else { throw 'module \\'' + name + '\\' not found'; } }, expand = function(root, name) { var results = [], parts, part; if (/^\\.\\.?(\\/|$)/.test(name)) { parts = [root, name].join('/').split('/'); } else { parts = name.split('/'); } for (var i = 0, length = parts.length; i < length; i++) { part = parts[i]; if (part == '..') { results.pop(); } else if (part != '.' && part != '') { results.push(part); } } return results.join('/'); }, dirname = function(path) { return path.split('/').slice(0, -1).join('/'); }; this.require = function(name) { return require(name, ''); }; this.require.define = function(bundle) { for (var key in bundle) modules[key] = bundle[key];};}";
   result += "var a = {};";
-  for (filePath in fileList) {
-    exportedNames = fileList[filePath];
+  ref2 = G.fileList;
+  for (filePath in ref2) {
+    exportedNames = ref2[filePath];
     for (i = 0, len = exportedNames.length; i < len; i++) {
       exportedName = exportedNames[i];
       if (exportedName.match(/^[a-z]+[a-z0-9]*$/i)) {
@@ -107,26 +113,32 @@ wrapSources = function(sources) {
   return result += "this.require.exportsFileMap=a;return this.require.define;}).call(this)({\n" + sources + "});";
 };
 
-module.exports = function(fileName, _packages) {
-  if (!_packages) {
+module.exports = function(fileName, packages) {
+  init();
+  if (!packages) {
     throw new PluginError('gulp-stitch-sourcemap', 'Missing packages option for gulp-stitch-sourcemap');
   }
-  packages = _packages;
-  resultMap = new SourceMapGenerator({
+  G.packages = packages;
+  G.resultMap = new SourceMapGenerator({
     file: fileName
   });
   return through.obj(function(file, enc, cb) {
+    if (file.isStream()) {
+      this.emit('error', new PluginError('gulp-concat', 'Streaming not supported'));
+      cb();
+      return;
+    }
     if (!file.sourceMap) {
       file.sourceMap = generateSourceMap(file);
     }
-    definitions += compileSource(file);
+    G.definitions += compileSource(file);
     return cb();
   }, function(cb) {
     var file;
     file = new gutil.File();
-    file.path = join(rootPath, fileName);
-    file.contents = new Buffer(wrapSources(definitions.slice(2)));
-    file.sourceMap = JSON.parse(resultMap.toString());
+    file.path = join(G.rootPath, fileName);
+    file.contents = new Buffer(wrapSources(G.definitions.slice(2)));
+    file.sourceMap = JSON.parse(G.resultMap.toString());
     this.push(file);
     return cb();
   });
