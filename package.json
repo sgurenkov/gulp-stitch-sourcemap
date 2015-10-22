@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Stitch commonjs modules together and prepare them for work in browser",
   "author": "Stan Gurenkov <klausflex@gmail.com>",
-  "keywords": "stitch, commonjs, sourcemaps, bundle"
+  "keywords": "stitch, commonjs, sourcemaps, bundle",
+  "repository": "git://github.com/sgurenkov/gulp-stitch-sourcemap.git",
   "main": "index.js",
   "files": [
     "index.js"
