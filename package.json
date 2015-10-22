@@ -1,6 +1,6 @@
 {
   "name": "gulp-stitch-sourcemap",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Stitch commonjs modules together and prepare them for work in browser",
   "author": "Stan Gurenkov <klausflex@gmail.com>",
   "keywords": "stitch, commonjs, sourcemaps, bundle",
