@@ -22,6 +22,15 @@ describe('gulp-stitch-sourcemap', function () {
         done();
       });
   });
+  it ('result file should have basename', function (done) {
+    gulp.src(['test/fixtures/**/*.js'])
+      .pipe(stitch(bundle, packages))
+      .pipe(assert.length(1))
+      .pipe(assert.first(function (f) {
+        f.basename.should.eql(bundle)
+      }))
+      .pipe(assert.end(done));
+  });
 
   it('should stitch files', function (done) {
     gulp.src(['test/fixtures/**/*.js'])
