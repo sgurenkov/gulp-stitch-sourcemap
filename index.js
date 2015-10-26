@@ -1,4 +1,4 @@
-var G, PluginError, SourceMapConsumer, SourceMapGenerator, compileSource, escodegen, esprima, extname, generateSourceMap, getRelativePath, gutil, init, join, ref, ref1, through, wrapSources;
+var G, PluginError, SourceMapConsumer, SourceMapGenerator, applySourceMap, cache, coffee, compileSource, escodegen, esprima, extname, fs, generateSourceMap, getRelativePath, gutil, init, join, path, processFile, ref, ref1, saveCache, through, typeIsArray, wrapSources;
 
 through = require('through2');
 
@@ -12,15 +12,37 @@ esprima = require('esprima');
 
 escodegen = require('escodegen');
 
+coffee = require('coffee-script');
+
+applySourceMap = require('vinyl-sourcemaps-apply');
+
+path = require('path');
+
+fs = require('fs');
+
 PluginError = gutil.PluginError;
+
+cache = {};
 
 G = {};
 
-init = function() {
+typeIsArray = function(value) {
+  return value && typeof value === 'object' && value instanceof Array && typeof value.length === 'number' && typeof value.splice === 'function' && !(value.propertyIsEnumerable('length'));
+};
+
+init = function(opts) {
+  if (!opts || !opts.output) {
+    throw new PluginError('gulp-stitch-sourcemap', 'Missing output (file name) option for gulp-stitch-sourcemap');
+  }
+  if (!opts.packages || !typeIsArray(opts.packages)) {
+    throw new PluginError('gulp-stitch-sourcemap', 'Missing or incorrect type of packages option for gulp-stitch-sourcemap');
+  }
   return G = {
+    output: opts.output,
+    cache: opts.cache || false,
+    packages: opts.packages,
     fileList: {},
     definitions: '',
-    packages: null,
     rootPath: process.cwd(),
     lineOffset: 1,
     resultMap: null
@@ -113,14 +135,66 @@ wrapSources = function(sources) {
   return result += "this.require.exportsFileMap=a;return this.require.define;}).call(this)({\n" + sources + "});";
 };
 
-module.exports = function(fileName, packages) {
-  init();
-  if (!packages) {
-    throw new PluginError('gulp-stitch-sourcemap', 'Missing packages option for gulp-stitch-sourcemap');
+saveCache = function(path, file) {
+  return cache[path] = {
+    file: file,
+    mtime: fs.statSync(path).mtime
+  };
+};
+
+processFile = function(file) {
+  var data, dest, filePath;
+  filePath = file.path;
+  if (G.cache && cache[filePath]) {
+    if (cache[filePath].mtime >= fs.statSync(filePath).mtime) {
+      return cache[filePath].file;
+    } else {
+      gutil.log(cache[filePath].mtime, fs.statSync(filePath).mtime);
+      gutil.log('rebuild ' + filePath);
+    }
   }
-  G.packages = packages;
+  if (path.extname(file.path) === '.coffee') {
+    dest = gutil.replaceExtension(file.path, '.js');
+    data = coffee.compile(file.contents.toString('utf8'), {
+      bare: true,
+      header: false,
+      sourceMap: !!file.sourceMap,
+      sourceRoot: false,
+      filename: file.path,
+      sourceFiles: [file.relative],
+      generatedFile: gutil.replaceExtension(file.relative, '.js')
+    });
+    file.path = dest;
+    if (data && data.v3SourceMap && file.sourceMap) {
+      applySourceMap(file, data.v3SourceMap);
+      file.contents = new Buffer(data.js);
+    } else {
+      file.contents = new Buffer(data);
+    }
+  } else {
+    if (!!file.sourceMap && !file.sourceMap.mappings) {
+      file.sourceMap = generateSourceMap(file);
+    }
+  }
+  if (G.cache) {
+    saveCache(filePath, file);
+  }
+  return file;
+};
+
+
+/*
+  opts = {
+    output: - output file name, (String)
+    packages: - packages to build, (String[])
+    cache: - use cache (boolean)
+  }
+ */
+
+module.exports = function(opts) {
+  init(opts);
   G.resultMap = new SourceMapGenerator({
-    file: fileName
+    file: G.output
   });
   return through.obj(function(file, enc, cb) {
     if (file.isStream()) {
@@ -128,18 +202,18 @@ module.exports = function(fileName, packages) {
       cb();
       return;
     }
-    if (!file.sourceMap) {
-      file.sourceMap = generateSourceMap(file);
-    }
+    file = processFile(file);
     G.definitions += compileSource(file);
     return cb();
   }, function(cb) {
     var file;
     file = new gutil.File();
-    file.path = join(G.rootPath, fileName);
+    file.path = join(G.rootPath, G.output);
     file.contents = new Buffer(wrapSources(G.definitions.slice(2)));
     file.sourceMap = JSON.parse(G.resultMap.toString());
     this.push(file);
     return cb();
   });
 };
+
+module.exports.cache = cache;

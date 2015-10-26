@@ -17,7 +17,8 @@
     "esprima": "^2.6.0",
     "gulp-util": "^3.0.7",
     "source-map": "^0.5.1",
-    "through2": "^2.0.0"
+    "through2": "^2.0.0",
+    "vinyl-sourcemaps-apply": "^0.2.0"
   },
   "engines": {
     "node": ">= 0.10"

@@ -4,14 +4,33 @@ gutil = require('gulp-util');
 {SourceMapConsumer, SourceMapGenerator} = require 'source-map'
 esprima = require('esprima')
 escodegen = require('escodegen')
-PluginError = gutil.PluginError;
+coffee = require('coffee-script')
+applySourceMap = require('vinyl-sourcemaps-apply');
+path = require('path')
+fs = require('fs')
+PluginError = gutil.PluginError
+cache = {}
 G = {}
 
-init = ->
+typeIsArray = ( value ) ->
+  value and
+    typeof value is 'object' and
+    value instanceof Array and
+    typeof value.length is 'number' and
+    typeof value.splice is 'function' and
+    not ( value.propertyIsEnumerable 'length' )
+
+init = (opts)->
+  if not opts or not opts.output
+    throw new PluginError 'gulp-stitch-sourcemap', 'Missing output (file name) option for gulp-stitch-sourcemap'
+  if not opts.packages or not typeIsArray opts.packages
+    throw new PluginError 'gulp-stitch-sourcemap', 'Missing or incorrect type of packages option for gulp-stitch-sourcemap'
   G =
+    output: opts.output,
+    cache: opts.cache or false
+    packages: opts.packages
     fileList: {}
     definitions: ''
-    packages: null
     rootPath: process.cwd()
     lineOffset: 1
     resultMap: null
@@ -76,28 +95,72 @@ wrapSources = (sources)->
 
   result += "this.require.exportsFileMap=a;return this.require.define;}).call(this)({\n#{sources}});"
 
-module.exports = (fileName, packages) ->
-  init()
-  if not packages
-    throw new PluginError 'gulp-stitch-sourcemap', 'Missing packages option for gulp-stitch-sourcemap'
-  G.packages = packages
+saveCache = (path, file) ->
+  cache[path] = {
+    file: file,
+    mtime: fs.statSync(path).mtime
+  }
+
+processFile = (file) ->
+  filePath = file.path
+
+  # return from cache if exists
+  if G.cache and cache[filePath]
+    if cache[filePath].mtime >= fs.statSync(filePath).mtime
+      return cache[filePath].file
+    else
+      gutil.log(cache[filePath].mtime, fs.statSync(filePath).mtime)
+      gutil.log('rebuild ' + filePath)
+
+  if path.extname(file.path) is '.coffee'
+    dest = gutil.replaceExtension(file.path, '.js')
+    data = coffee.compile(file.contents.toString('utf8'), {
+      bare: true
+      header: false
+      sourceMap: !!file.sourceMap
+      sourceRoot: false
+      filename: file.path
+      sourceFiles: [file.relative]
+      generatedFile: gutil.replaceExtension file.relative, '.js'
+    })
+    file.path = dest
+    if data and data.v3SourceMap and file.sourceMap
+      applySourceMap(file, data.v3SourceMap)
+      file.contents = new Buffer data.js
+    else
+      file.contents = new Buffer(data);
+  else
+    file.sourceMap = generateSourceMap(file) if !!file.sourceMap && not file.sourceMap.mappings
+
+  saveCache(filePath, file) if G.cache
+  return file
+###
+  opts = {
+    output: - output file name, (String)
+    packages: - packages to build, (String[])
+    cache: - use cache (boolean)
+  }
+###
+module.exports = (opts) ->
+  init(opts)
   G.resultMap = new SourceMapGenerator
-    file: fileName
+    file: G.output
 
   return through.obj (file, enc, cb) ->
     if file.isStream()
       this.emit 'error', new PluginError('gulp-concat',  'Streaming not supported')
       cb()
       return
-    file.sourceMap = generateSourceMap file if not file.sourceMap
+    file = processFile file
     G.definitions += compileSource file
     cb()
 
   , (cb) ->
     file = new gutil.File();
-    file.path = join(G.rootPath, fileName);
+    file.path = join(G.rootPath, G.output);
     file.contents = new Buffer wrapSources G.definitions.slice(2)
     file.sourceMap = JSON.parse(G.resultMap.toString())
     this.push(file)
     cb()
 
+module.exports.cache = cache

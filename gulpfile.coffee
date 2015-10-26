@@ -6,5 +6,5 @@ gulp.task 'coffee', ->
     .pipe coffee {bare: true}
     .pipe gulp.dest './'
 
-gulp.task 'default', ->
+gulp.task 'default', ['coffee'], ->
   gulp.watch ['src/*.coffee'], ['coffee']
