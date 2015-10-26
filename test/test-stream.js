@@ -2,12 +2,14 @@ var array = require('stream-array');
 var File = require('gulp-util').File;
 var Stream = require('stream');
 
-module.exports = function () {
+module.exports = function (ext) {
   var args = Array.prototype.slice.call(arguments);
-  var isStream = false;
-  if (args[args.length - 1] === 1) {
-    args.pop();
-    isStream = true;
+  var isStream, ext, filename;
+  if (typeof(args[args.length - 1]) === 'object') {
+    opts = args.pop();
+    isStream = opts.stream || false;
+    ext = opts.ext || '.js';
+    filename = opts.filename || 'file';
   }
 
   var i = 0;
@@ -17,7 +19,7 @@ module.exports = function () {
     return new File({
       cwd: '/home/contra/',
       base: '/home/contra/test',
-      path: '/home/contra/test/file' + (i++).toString() + '.js',
+      path: '/home/contra/test/' + filename + (i++).toString() + ext,
       contents: content,
       stat: {mode: 0666}
     });

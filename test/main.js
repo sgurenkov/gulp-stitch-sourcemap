@@ -1,30 +1,61 @@
 var should = require('should');
 var stitch = require('../index');
+var cache = require('../index').cache;
 var gulp = require('gulp');
 var testStream = require('./test-stream');
 var assert = require('stream-assert');
-var SourceMapConsumer = require('source-map').SourceMapConsumer
+var SourceMapConsumer = require('source-map').SourceMapConsumer;
 var packages = ['test/fixtures'];
 var bundle = 'bundle.js';
+var sourcemaps = require('gulp-sourcemaps');
 
 describe('gulp-stitch-sourcemap', function () {
-  it('should throw when packages is missing', function () {
+  it('should throw when output file name option is missing', function () {
     (function () {
       stitch();
-    }).should.throw('Missing packages option for gulp-stitch-sourcemap');
+    }).should.throw('Missing output (file name) option for gulp-stitch-sourcemap');
+  });
+
+  it('should throw when packages option is missing or incorrect type', function () {
+    (function () {
+      stitch({output: 'test.js', packages: {}});
+    }).should.throw('Missing or incorrect type of packages option for gulp-stitch-sourcemap');
   });
 
   it('should emit error on streamed file', function (done) {
-    testStream('hi', 1)
-      .pipe(stitch(bundle, packages))
+    testStream('hi', {stream: true, ext: '.coffee'})
+      .pipe(stitch({output: bundle, packages: packages}))
       .on('error', function (err) {
         err.message.should.eql('Streaming not supported');
         done();
       });
   });
+
+  it ('should compile .coffee files', function (done) {
+    testStream('variable = 1', {ext: '.coffee', filename: 'test'})
+      .pipe(sourcemaps.init())
+      .pipe(stitch({output: bundle, packages: packages}))
+      .pipe(assert.first(function (f) {
+        f.sourceMap.sources[0].should.eql('test0.coffee');
+      }))
+      .pipe(assert.end(done));
+  });
+
+  it ('should use cache for watch changes', function (done) {
+    gulp.src(['test/fixtures/**/*.js'])
+      .pipe(stitch({output: bundle, packages: packages, cache: true}))
+      .pipe(assert.first(function (f) {
+        for (path in cache) {
+          (path.indexOf('a.js') > -1 || path.indexOf('b.js') > -1).should.true()
+        }
+      }))
+      .pipe(assert.end(done));
+
+  });
+
   it ('result file should have basename', function (done) {
     gulp.src(['test/fixtures/**/*.js'])
-      .pipe(stitch(bundle, packages))
+      .pipe(stitch({output: bundle, packages: packages}))
       .pipe(assert.length(1))
       .pipe(assert.first(function (f) {
         f.basename.should.eql(bundle)
@@ -34,7 +65,7 @@ describe('gulp-stitch-sourcemap', function () {
 
   it('should stitch files', function (done) {
     gulp.src(['test/fixtures/**/*.js'])
-      .pipe(stitch(bundle, packages))
+      .pipe(stitch({output: bundle, packages: packages}))
       .pipe(assert.length(1))
       .pipe(assert.first(function (f) {
         var arr = f.contents.toString().split("\n");
@@ -48,7 +79,8 @@ describe('gulp-stitch-sourcemap', function () {
 
   it('should create sourcemap', function (done){
     gulp.src(['test/fixtures/**/*.js'])
-      .pipe(stitch(bundle, packages))
+      .pipe(sourcemaps.init())
+      .pipe(stitch({output: bundle, packages: packages}))
       .pipe(assert.length(1))
       .pipe(assert.first(function (f) {
         f.sourceMap.sources.should.have.length(2);
@@ -59,7 +91,8 @@ describe('gulp-stitch-sourcemap', function () {
 
   it('sourcemap should be correct', function (done){
     gulp.src(['test/fixtures/**/*.js'])
-      .pipe(stitch(bundle, packages))
+      .pipe(sourcemaps.init())
+      .pipe(stitch({output: bundle, packages: packages}))
       .pipe(assert.length(1))
       .pipe(assert.first(function (f) {
         var smc = new SourceMapConsumer(f.sourceMap);
